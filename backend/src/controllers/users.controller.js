@@ -18,7 +18,9 @@ const loginUser = async (req, res) => {
     let user = await userService.login(email, password);
 
     if (!user) {
-      return res.status(400).send({ error: "Datos erroneos!" });
+      return res.status(401).send({
+        error: "Credenciales inválidas",
+      });
     }
 
     const accessToken = generateAccessToken({
@@ -125,7 +127,9 @@ const createUser = async (req, res) => {
     return res.status(201).send({ payload: user });
   } catch (error) {
     console.log("Error al crear usuario: ", error);
-    res.send({ error: "Error interno del servidor!" });
+    return res.status(500).send({
+      error: "Error interno del servidor!",
+    });
   }
 };
 
@@ -158,8 +162,43 @@ const getUsers = async (req, res) => {
   }
 };
 
-const putUser = async () => {};
-const deleteUser = async () => {};
+const putUser = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const datos = req.body;
+    if (!id || datos.length === 0) {
+      return res.status(400).send({ error: "Faltan datos" });
+    }
+    const userUpdated = await userService.updateUser(id, datos);
+    if (!userUpdated) {
+      return res
+        .status(404)
+        .send({ error: "No se encontro el usuario a actualzar" });
+    }
+    return res.status(200).send({ payload: userUpdated });
+  } catch (error) {
+    console.log("Error en putUser");
+    return res.status(500).send({ error: "Error al actualizar usuario" });
+  }
+};
+const deleteUser = async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!id) {
+      return res.status(400).send({ error: "Faltan datos" });
+    }
+    const userDeleted = await userService.deleteUser(id);
+    if (!userDeleted) {
+      return res
+        .status(404)
+        .send({ error: "No se encontro el usuario al eliminar" });
+    }
+    return res.status(200).send({ payload: userDeleted });
+  } catch (error) {
+    console.log("Error en deleteUser");
+    return res.status(500).send({ error: "Error al eliminar usuario" });
+  }
+};
 
 export default {
   loginUser,

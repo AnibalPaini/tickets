@@ -8,7 +8,7 @@ export default class UserService {
   constructor() {}
 
   login = async (email, password) => {
-    const user = await userRepo.getUserByEmail(email);
+    const user = await userRepo.findByEmail(email);
     if (!user) {
       return null;
     }
@@ -52,14 +52,43 @@ export default class UserService {
   };
 
   refresh = (id) => {
-    return userRepo.getUserByid(id);
+    return userRepo.findById(id);
   };
 
   getUsers = () => {
-    return userRepo.getUsers();
+    return userRepo.findAll();
   };
 
   getUserByid = (id) => {
-    return userRepo.getUserByid(id);
+    return userRepo.findById(id);
+  };
+
+  updateUser = async (id, datos) => {
+    const user = await userRepo.findById(id);
+
+    if (!user) {
+      return null;
+    }
+
+    let password = user.password;
+
+    if (datos.password && datos.password !== "") {
+      password = await hashPassword(datos.password);
+    }
+    const datosUpdate = {
+      ...datos,
+      password,
+    };
+    return userRepo.update(id, datosUpdate);
+  };
+
+  deleteUser = async (id) => {
+    const user = await userRepo.findById(id);
+
+    if (!user) {
+      return null;
+    }
+
+    return userRepo.delete(id);
   };
 }

@@ -20,5 +20,15 @@ router.post(
   authorizationMiddleware(3),
   usersController.createUser,
 );
-/* router.put("/:id", usersController.login)
-router.delete("/:id", usersController.login) */
+router.put(
+  "/:id",
+  authMiddleware,
+  authorizationMiddleware(3),
+  usersController.putUser,
+);
+router.delete(
+  "/:id",
+  authMiddleware,
+  authorizationMiddleware(3),
+  usersController.deleteUser,
+);
