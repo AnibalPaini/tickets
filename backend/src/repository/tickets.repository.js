@@ -123,9 +123,42 @@ export default class TicketRepo {
     return rows[0] || null;
   };
   create = async (datos) => {
-    const query=''
+    let { title, description, category_id, state_id, priority_id, created_by } =
+      datos;
 
+    const query = `
+        INSERT INTO tickets (title, description, category_id, state_id, priority_id, created_by)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        RETURNING id, title, description, category_id, state_id, priority_id, created_by;
+    `;
+
+    const values = [
+      title,
+      description,
+      category_id,
+      state_id,
+      priority_id,
+      created_by,
+    ];
+
+    const result = await pool.query(query, values);
+    return result.rows[0] || null;
   };
   update = async () => {};
   delete = async () => {};
+
+  //Solicitantes y asignados
+  addRequester = async (ticketId, userId) => {
+    const query = `
+    INSERT INTO ticket_requesters (ticket_id, user_id)
+    VALUES ($1, $2)
+    RETURNING *
+  `;
+
+    const values = [ticketId, userId];
+
+    const result = await pool.query(query, values);
+
+    return result.rows[0] || null;
+  };
 }

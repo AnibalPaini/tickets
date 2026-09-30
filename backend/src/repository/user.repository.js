@@ -65,7 +65,7 @@ export default class UserRepo {
          rol_id=$4,
          activo=$5
         WHERE id=$6
-        RETURNING id, nombre, email, rol_id
+        RETURNING id, name, email, rol_id
     `;
       const values = [email, name, password, rol_id, activo, id];
       const result = await pool.query(query, values);
