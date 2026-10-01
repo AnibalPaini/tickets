@@ -1,13 +1,33 @@
 import pool from "../db/connectionDB.js";
 export default class TicketRepo {
-  getAll = async () => {
+  findAll = async () => {
     const query = `
     SELECT * FROM tickets
     `;
     const rows = await pool.query(query);
     return rows[0] || null;
   };
-  getById = async (id) => {
+
+  findById = async (id) => {
+    const query = `
+        SELECT id,
+            title,
+            description,
+            category_id,
+            date,
+            priority_id,
+            state_id,
+            created_by,
+            created_at,  
+        FROM tickets 
+        WHERE id=$1
+    `;
+    const rows = await pool.query(query, id);
+    return rows[0] || null;
+  };
+
+  //Consulta todo lo asociado al ticket (Respuestas, estados, asignados, areas...)
+  getDetailsById = async (id) => {
     //jsonb_build_object Función de construcción de JSONB
     //COALESCE Función si el primer valor es NULL devuelve otro valor indicado
     //jsonb_agg agrupa varias filas en un unico array JSONB
@@ -18,6 +38,7 @@ export default class TicketRepo {
         t.description,
         t.date,
         t.created_at,
+        t.created_by,
 
         jsonb_build_object(
             'id', c.id,
@@ -122,6 +143,7 @@ export default class TicketRepo {
     const { rows } = await pool.query(query, [id]);
     return rows[0] || null;
   };
+
   create = async (datos) => {
     let { title, description, category_id, state_id, priority_id, created_by } =
       datos;
@@ -144,8 +166,38 @@ export default class TicketRepo {
     const result = await pool.query(query, values);
     return result.rows[0] || null;
   };
-  update = async () => {};
-  delete = async () => {};
+
+  update = async (id, datos) => {
+    try {
+      let { title, description, category_id, priority_id, state_id } =
+        datos;
+      const query = `
+            UPDATE tickets SET 
+                title=$1,
+                description=$2,
+                category_id=$3,
+                priority_id=$4,
+                state_id=$5
+            WHERE id=$6
+            RETURNING(id, title, description, category_id,date, priority_id,state_id, created_by, created_at)
+        `;
+      let values = [title, description, category_id, priority_id, state_id, id];
+      const result = await pool.query(query, values);
+      return result.rows[0] || null;
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  delete = async (id) => {
+    try {
+        const query=`
+            DELETE FROM TICKETS
+        `
+    } catch (error) {
+        
+    }
+  };
 
   //Solicitantes y asignados
   addRequester = async (ticketId, userId) => {
