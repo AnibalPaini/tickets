@@ -22,7 +22,7 @@ export default class TicketRepo {
         FROM tickets 
         WHERE id=$1
     `;
-    const rows = await pool.query(query, id);
+    const rows = await pool.query(query, [id]);
     return rows[0] || null;
   };
 
@@ -169,8 +169,7 @@ export default class TicketRepo {
 
   update = async (id, datos) => {
     try {
-      let { title, description, category_id, priority_id, state_id } =
-        datos;
+      let { title, description, category_id, priority_id, state_id } = datos;
       const query = `
             UPDATE tickets SET 
                 title=$1,
@@ -179,7 +178,7 @@ export default class TicketRepo {
                 priority_id=$4,
                 state_id=$5
             WHERE id=$6
-            RETURNING(id, title, description, category_id,date, priority_id,state_id, created_by, created_at)
+            RETURNING id, title, description, category_id,date, priority_id,state_id, created_by, created_at
         `;
       let values = [title, description, category_id, priority_id, state_id, id];
       const result = await pool.query(query, values);
@@ -191,11 +190,14 @@ export default class TicketRepo {
 
   delete = async (id) => {
     try {
-        const query=`
-            DELETE FROM TICKETS
-        `
+      const query = `
+            DELETE FROM TICKETS WHERE id=$1 
+            RETURNING id, title, description, category_id,date, priority_id,state_id, created_by, created_at
+        `;
+      const result = await pool.query(query, [id]);
+      return result.rows[0] || null;
     } catch (error) {
-        
+      throw error;
     }
   };
 

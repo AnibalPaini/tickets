@@ -118,8 +118,23 @@ const deleteTicket = async (req, res) => {
         .send({ error: "No se encontro el ticket a actualizar" });
     }
     return res.status(200).send({ payload: ticketDeleted });
-  } catch (error) {}
+  } catch (error) {
+    console.log("Error deleteTicket controller");
+
+    return res.status(500).send({ error: "Error al eliminar ticket" });
+  }
 };
+
+//Assignees and Requester
+//Como predeterminado se asigna requester al creador
+const addRequester=async()=>{
+  try {
+    
+  } catch (error) {
+    
+  }
+}
+
 
 export {
   getTickets,

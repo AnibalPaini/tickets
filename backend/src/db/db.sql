@@ -149,3 +149,40 @@ INSERT INTO "areas" ("area") VALUES
   ('Tecnicos'),
   ('Administración'),
   ('Infraestructura');
+
+  --Cascada para delete de tickets
+  ALTER TABLE "ticket_requesters"
+ADD FOREIGN KEY ("ticket_id")
+REFERENCES "tickets" ("id")
+ON DELETE CASCADE;
+
+ALTER TABLE "ticket_assignees"
+ADD FOREIGN KEY ("ticket_id")
+REFERENCES "tickets" ("id")
+ON DELETE CASCADE;
+
+ALTER TABLE "ticket_areas"
+ADD FOREIGN KEY ("ticket_id")
+REFERENCES "tickets" ("id")
+ON DELETE CASCADE;
+
+ALTER TABLE "ticket_replies"
+ADD FOREIGN KEY ("ticket_id")
+REFERENCES "tickets" ("id")
+ON DELETE CASCADE;
+
+ALTER TABLE "ticket_requesters"
+ADD FOREIGN KEY ("user_id")
+REFERENCES "users" ("id");
+
+ALTER TABLE "ticket_assignees"
+ADD FOREIGN KEY ("user_id")
+REFERENCES "users" ("id");
+
+ALTER TABLE "ticket_replies"
+ADD FOREIGN KEY ("user_id")
+REFERENCES "users" ("id");
+
+ALTER TABLE "tickets"
+ADD FOREIGN KEY ("created_by")
+REFERENCES "users" ("id");
