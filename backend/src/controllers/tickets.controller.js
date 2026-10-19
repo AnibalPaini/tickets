@@ -127,9 +127,15 @@ const deleteTicket = async (req, res) => {
 
 //Assignees and Requester
 //Como predeterminado se asigna requester al creador
-const addRequester=async()=>{
+const addRequester=async(req,res)=>{
   try {
+    const id= req.params.id;
+    const {idUser}= req.body;
+    if(!id || !idUser){
+      return res.status(400).send({error:"Faltan datos!"})
+    }
     
+
   } catch (error) {
     
   }
