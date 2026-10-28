@@ -115,7 +115,7 @@ const deleteTicket = async (req, res) => {
     if (!ticketDeleted) {
       return res
         .status(404)
-        .send({ error: "No se encontro el ticket a actualizar" });
+        .send({ error: "No se encontro el ticket a eliminar" });
     }
     return res.status(200).send({ payload: ticketDeleted });
   } catch (error) {
@@ -127,20 +127,50 @@ const deleteTicket = async (req, res) => {
 
 //Assignees and Requester
 //Como predeterminado se asigna requester al creador
-const addRequester=async(req,res)=>{
+const addRequester = async (req, res) => {
   try {
-    const id= req.params.id;
-    const {idUser}= req.body;
-    if(!id || !idUser){
-      return res.status(400).send({error:"Faltan datos!"})
+    const id = req.params.id;
+    const { idUser } = req.body;
+    if (!id || !idUser) {
+      return res.status(400).send({ error: "Faltan datos!" });
     }
-    
-
+    const requester = await ticketService.addRequester(id, idUser);
+    if (!requester) {
+      return res.status(404).send({ error: "No se encontro el ticket!" });
+    }
+    return res.status(200).send({ payload: requester });
   } catch (error) {
-    
+    console.error(error);
+    return res
+      .status(500)
+      .send({ error: "Error del server al insertar requester" });
   }
-}
+};
 
+const addAssignees = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { userIds = [], areaIds = [] } = req.body;
+    if (!Array.isArray(userIds) || !Array.isArray(areaIds)) {
+      return res
+        .status(400)
+        .send({ error: "userIds y areaIds tienen que ser arrays" });
+    }
+    if (!id || (userIds.length === 0 && areaIds.length === 0)) {
+      return res.status(400).send({ error: "Faltan datos!" });
+    }
+    const result = await ticketService.addAssignees(id, userIds, areaIds);
+    if (!result) {
+      return res.status(404).send({ error: "No se encontro el ticket!" });
+    }
+    return res.status(200).send({ payload: result });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .send({ error: "Error del server al asignar el ticket" });
+  }
+};
 
 export {
   getTickets,
@@ -149,4 +179,6 @@ export {
   createTickets,
   putTicket,
   deleteTicket,
+  addRequester,
+  addAssignees,
 };

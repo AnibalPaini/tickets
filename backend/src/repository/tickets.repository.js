@@ -4,8 +4,8 @@ export default class TicketRepo {
     const query = `
     SELECT * FROM tickets
     `;
-    const rows = await pool.query(query);
-    return rows[0] || null;
+    const result = await pool.query(query);
+    return result.rows;
   };
 
   findById = async (id) => {
@@ -18,12 +18,12 @@ export default class TicketRepo {
             priority_id,
             state_id,
             created_by,
-            created_at,  
+            created_at
         FROM tickets 
-        WHERE id=$1
+        WHERE id=$1 
     `;
-    const rows = await pool.query(query, [id]);
-    return rows[0] || null;
+    const result = await pool.query(query, [id]);
+    return result.rows[0] || null;
   };
 
   //Consulta todo lo asociado al ticket (Respuestas, estados, asignados, areas...)
@@ -59,7 +59,7 @@ export default class TicketRepo {
             SELECT jsonb_agg(
                 jsonb_build_object(
                     'id', u.id,
-                    'name', u.name,
+                    'name', u.nombre,
                     'email', u.email,
                     'rol', r.rol
                 )
@@ -77,7 +77,7 @@ export default class TicketRepo {
             SELECT jsonb_agg(
                 jsonb_build_object(
                     'id', u.id,
-                    'name', u.name,
+                    'name', u.nombre,
                     'email', u.email,
                     'rol', r.rol
                 )
@@ -85,7 +85,7 @@ export default class TicketRepo {
             FROM ticket_assignees ta
             INNER JOIN users u
                 ON u.id = ta.user_id
-            INNER JOIN roles 
+            INNER JOIN roles r
                 ON r.id= u.rol_id
             WHERE ta.ticket_id = t.id
         ), '[]') AS assignees,
@@ -111,7 +111,7 @@ export default class TicketRepo {
                     'created_at', tr.created_at,
                     'user', jsonb_build_object(
                         'id', u.id,
-                        'name', u.name,
+                        'name', u.nombre,
                         'email', u.email,
                         'rol', r.rol
                     )
@@ -149,9 +149,9 @@ export default class TicketRepo {
       datos;
 
     const query = `
-        INSERT INTO tickets (title, description, category_id, state_id, priority_id, created_by)
-        VALUES ($1,$2,$3,$4,$5,$6)
-        RETURNING id, title, description, category_id, state_id, priority_id, created_by;
+        INSERT INTO tickets (title, description, category_id, state_id, priority_id, created_by, date, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6, CURRENT_DATE, NOW())
+        RETURNING id, title, description, category_id, state_id, priority_id, created_by, date, created_at;
     `;
 
     const values = [
@@ -210,6 +210,37 @@ export default class TicketRepo {
   `;
 
     const values = [ticketId, userId];
+
+    const result = await pool.query(query, values);
+
+    return result.rows[0] || null;
+  };
+
+  //ON CONFLICT DO NOTHING: si ya estaba asignado no tira error, no inserta nada
+  addAssignee = async (ticketId, userId) => {
+    const query = `
+    INSERT INTO ticket_assignees (ticket_id, user_id)
+    VALUES ($1, $2)
+    ON CONFLICT DO NOTHING
+    RETURNING *
+  `;
+
+    const values = [ticketId, userId];
+
+    const result = await pool.query(query, values);
+
+    return result.rows[0] || null;
+  };
+
+  addArea = async (ticketId, areaId) => {
+    const query = `
+    INSERT INTO ticket_areas (ticket_id, area_id)
+    VALUES ($1, $2)
+    ON CONFLICT DO NOTHING
+    RETURNING *
+  `;
+
+    const values = [ticketId, areaId];
 
     const result = await pool.query(query, values);
 
