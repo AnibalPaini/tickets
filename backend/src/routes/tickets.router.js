@@ -11,6 +11,9 @@ import {
   createTickets,
   putTicket,
   deleteTicket,
+  patchState,
+  patchPriority,
+  closeTicket,
   addRequester,
   addAssignees,
   removeRequester,
@@ -23,6 +26,7 @@ export const router = Router();
 //Roles: 1 Usuario, 2 Soporte, 3 Administrador
 
 //CRUD
+//Acepta query params: page, limit, state_id, priority_id, category_id, office_id, search, sort, order
 router.get("/", authMiddleware, getTickets);
 router.get("/:id", authMiddleware, validateIds, getTicketById);
 router.get("/:id/details", authMiddleware, validateIds, getTicketDetailsById);
@@ -41,6 +45,24 @@ router.delete(
   validateIds,
   deleteTicket,
 );
+
+//Estado, prioridad y cierre
+router.patch(
+  "/:id/state",
+  authMiddleware,
+  authorizationMiddleware(2, 3),
+  validateIds,
+  patchState,
+);
+router.patch(
+  "/:id/priority",
+  authMiddleware,
+  authorizationMiddleware(2, 3),
+  validateIds,
+  patchPriority,
+);
+//Cualquier rol: el permiso del Usuario se revisa en el service
+router.patch("/:id/close", authMiddleware, validateIds, closeTicket);
 
 //Solicitantes y asignados
 router.post(

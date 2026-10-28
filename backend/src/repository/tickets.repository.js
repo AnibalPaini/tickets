@@ -1,34 +1,122 @@
 import pool from "../db/connectionDB.js";
-export default class TicketRepo {
-  findAll = async () => {
-    const query = `
-    SELECT * FROM tickets
-    `;
-    const result = await pool.query(query);
-    return result.rows;
-  };
 
-  //Tickets donde el usuario es solicitante, asignado o de un area asignada
-  findByParticipant = async (userId) => {
-    const query = `
-    SELECT * FROM tickets t
-    WHERE EXISTS (
-            SELECT 1 FROM ticket_requesters tr
-            WHERE tr.ticket_id = t.id AND tr.user_id = $1
-        )
-        OR EXISTS (
-            SELECT 1 FROM ticket_assignees ta
-            WHERE ta.ticket_id = t.id AND ta.user_id = $1
-        )
+//Columnas por las que se puede ordenar. Nunca se pone en el SQL lo que manda el cliente,
+//solo un valor de esta lista (asi no hay inyeccion SQL)
+const SORT_COLUMNS = {
+  created_at: "t.created_at",
+  date: "t.date",
+  title: "t.title",
+  priority: "t.priority_id",
+  state: "t.state_id",
+};
+
+export default class TicketRepo {
+  //Listado con filtros, busqueda, orden y paginacion
+  //Cada filtro que llega agrega una condicion al WHERE y su valor a "values" ($1, $2...)
+  findMany = async (options) => {
+    const {
+      participantId,
+      state_id,
+      priority_id,
+      category_id,
+      office_id,
+      search,
+      sort,
+      order,
+      limit,
+      offset,
+    } = options;
+
+    const conditions = [];
+    const values = [];
+
+    //Usuario comun: solo tickets donde es solicitante, asignado o de un area asignada
+    if (participantId) {
+      values.push(participantId);
+      const n = values.length;
+      conditions.push(`(
+        EXISTS (SELECT 1 FROM ticket_requesters tr WHERE tr.ticket_id = t.id AND tr.user_id = $${n})
+        OR EXISTS (SELECT 1 FROM ticket_assignees ta WHERE ta.ticket_id = t.id AND ta.user_id = $${n})
         OR EXISTS (
             SELECT 1 FROM ticket_areas tar
-            INNER JOIN user_area ua
-                ON ua.area_id = tar.area_id
-            WHERE tar.ticket_id = t.id AND ua.user_id = $1
+            INNER JOIN user_area ua ON ua.area_id = tar.area_id
+            WHERE tar.ticket_id = t.id AND ua.user_id = $${n}
         )
+      )`);
+    }
+    if (state_id) {
+      values.push(state_id);
+      conditions.push(`t.state_id = $${values.length}`);
+    }
+    if (priority_id) {
+      values.push(priority_id);
+      conditions.push(`t.priority_id = $${values.length}`);
+    }
+    if (category_id) {
+      values.push(category_id);
+      conditions.push(`t.category_id = $${values.length}`);
+    }
+    //La oficina del ticket es la oficina del usuario que lo creo
+    if (office_id) {
+      values.push(office_id);
+      conditions.push(`u.office_id = $${values.length}`);
+    }
+    //Busca en titulo y descripcion. Se escapan % y _ para que se busquen como texto
+    if (search) {
+      values.push(`%${search.replace(/[\\%_]/g, "\\$&")}%`);
+      const n = values.length;
+      conditions.push(`(t.title ILIKE $${n} OR t.description ILIKE $${n})`);
+    }
+
+    const where =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const sortColumn = SORT_COLUMNS[sort] || SORT_COLUMNS.created_at;
+    const sortOrder = order === "asc" ? "ASC" : "DESC";
+
+    const countQuery = `
+    SELECT COUNT(*)::int AS total
+    FROM tickets t
+    INNER JOIN users u
+        ON u.id = t.created_by
+    ${where}
     `;
-    const result = await pool.query(query, [userId]);
-    return result.rows;
+
+    const dataQuery = `
+    SELECT
+        t.id,
+        t.title,
+        t.description,
+        t.date,
+        t.created_at,
+        t.category_id,
+        c.category,
+        t.priority_id,
+        p.priority,
+        t.state_id,
+        s.state,
+        t.created_by,
+        u.nombre AS created_by_name,
+        u.office_id,
+        o.office
+    FROM tickets t
+    INNER JOIN categories c
+        ON c.id = t.category_id
+    INNER JOIN priorities p
+        ON p.id = t.priority_id
+    INNER JOIN states s
+        ON s.id = t.state_id
+    INNER JOIN users u
+        ON u.id = t.created_by
+    LEFT JOIN offices o
+        ON o.id = u.office_id
+    ${where}
+    ORDER BY ${sortColumn} ${sortOrder}, t.id DESC
+    LIMIT $${values.length + 1} OFFSET $${values.length + 2}
+    `;
+
+    const countResult = await pool.query(countQuery, values);
+    const dataResult = await pool.query(dataQuery, [...values, limit, offset]);
+    return { rows: dataResult.rows, total: countResult.rows[0].total };
   };
 
   findById = async (id) => {
@@ -147,7 +235,28 @@ export default class TicketRepo {
             INNER JOIN roles r
                 ON r.id = u.rol_id
             WHERE tr.ticket_id = t.id
-        ), '[]') AS replies
+        ), '[]') AS replies,
+
+        COALESCE((
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'id', adj.id,
+                    'original_name', adj.original_name,
+                    'mime_type', adj.mime_type,
+                    'size', adj.size,
+                    'created_at', adj.created_at,
+                    'user', jsonb_build_object(
+                        'id', u.id,
+                        'name', u.nombre
+                    )
+                )
+                ORDER BY adj.created_at ASC
+            )
+            FROM ticket_attachments adj
+            INNER JOIN users u
+                ON u.id = adj.user_id
+            WHERE adj.ticket_id = t.id
+        ), '[]') AS attachments
 
         FROM tickets t
 
@@ -209,6 +318,29 @@ export default class TicketRepo {
     } catch (error) {
       throw error;
     }
+  };
+
+  //Cambia solo el estado o solo la prioridad. Devuelven null si el ticket no existe
+  updateState = async (id, stateId) => {
+    const query = `
+    UPDATE tickets SET
+        state_id = $1
+    WHERE id = $2
+    RETURNING id, title, description, category_id, date, priority_id, state_id, created_by, created_at
+    `;
+    const result = await pool.query(query, [stateId, id]);
+    return result.rows[0] || null;
+  };
+
+  updatePriority = async (id, priorityId) => {
+    const query = `
+    UPDATE tickets SET
+        priority_id = $1
+    WHERE id = $2
+    RETURNING id, title, description, category_id, date, priority_id, state_id, created_by, created_at
+    `;
+    const result = await pool.query(query, [priorityId, id]);
+    return result.rows[0] || null;
   };
 
   delete = async (id) => {

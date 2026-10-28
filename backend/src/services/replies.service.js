@@ -1,20 +1,13 @@
 import ReplyRepo from "../repository/replies.repository.js";
-import TicketRepo from "../repository/tickets.repository.js";
-import { ROLES } from "../utils/roles.js";
+import TicketService from "./tickets.service.js";
 const replyRepo = new ReplyRepo();
-const ticketRepo = new TicketRepo();
+const ticketService = new TicketService();
 
 export default class ReplyService {
   //Mismo criterio que ver el ticket: el Usuario solo si participa
   getReplies = async (ticketId, user) => {
-    const ticket = await ticketRepo.findById(ticketId);
+    const ticket = await ticketService.getTicketById(ticketId, user);
     if (!ticket) {
-      return null;
-    }
-    if (
-      user.rol_id === ROLES.USUARIO &&
-      !(await ticketRepo.isParticipant(ticketId, user.id))
-    ) {
       return null;
     }
     return await replyRepo.findByTicketId(ticketId);
@@ -27,14 +20,7 @@ export default class ReplyService {
   //Pueden responder el solicitante, los asignados (usuarios o por area) y el administrador
   //Devuelve null si no existe el ticket, false si no puede responder y true si puede
   canReply = async (ticketId, user) => {
-    const ticket = await ticketRepo.findById(ticketId);
-    if (!ticket) {
-      return null;
-    }
-    if (user.rol_id === ROLES.ADMIN) {
-      return true;
-    }
-    return await ticketRepo.isParticipant(ticketId, user.id);
+    return await ticketService.canParticipate(ticketId, user);
   };
 
   createReply = async (ticketId, userId, message) => {

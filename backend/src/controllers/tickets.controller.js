@@ -3,12 +3,69 @@ import { PG_ERRORS } from "../utils/pgErrors.js";
 import { isValidId } from "../utils/validators.js";
 const ticketService = new TicketService();
 
+const SORT_FIELDS = ["created_at", "date", "title", "priority", "state"];
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
+
+//Lee y valida los query params del listado. Devuelve { error } si algo no es valido
+//Ej: /api/ticket?page=2&limit=20&state_id=1&search=impresora&sort=priority&order=desc
+const parseTicketQuery = (query) => {
+  const { page = "1", limit = String(DEFAULT_LIMIT), search, sort, order } = query;
+
+  if (!isValidId(page)) {
+    return { error: "page tiene que ser un numero mayor a 0" };
+  }
+  if (!isValidId(limit) || Number(limit) > MAX_LIMIT) {
+    return { error: `limit tiene que ser un numero entre 1 y ${MAX_LIMIT}` };
+  }
+
+  const filters = {};
+  for (const name of ["state_id", "priority_id", "category_id", "office_id"]) {
+    if (query[name] !== undefined) {
+      if (!isValidId(query[name])) {
+        return { error: `${name} no es valido` };
+      }
+      filters[name] = Number(query[name]);
+    }
+  }
+
+  if (
+    search !== undefined &&
+    (typeof search !== "string" || search.length > MAX_SEARCH_LENGTH)
+  ) {
+    return { error: `search tiene que ser un texto de hasta ${MAX_SEARCH_LENGTH} caracteres` };
+  }
+  if (sort !== undefined && !SORT_FIELDS.includes(sort)) {
+    return { error: `sort tiene que ser uno de: ${SORT_FIELDS.join(", ")}` };
+  }
+  if (order !== undefined && order !== "asc" && order !== "desc") {
+    return { error: "order tiene que ser asc o desc" };
+  }
+
+  return {
+    page: Number(page),
+    limit: Number(limit),
+    ...filters,
+    search: search?.trim() || undefined,
+    sort: sort || "created_at",
+    order: order || "desc",
+  };
+};
+
 const getTickets = async (req, res) => {
   try {
-    const tickets = await ticketService.getTickets(req.user);
-    return res.status(200).send({ payload: tickets });
+    const options = parseTicketQuery(req.query);
+    if (options.error) {
+      return res.status(400).send({ error: options.error });
+    }
+    const { tickets, pagination } = await ticketService.getTickets(
+      req.user,
+      options,
+    );
+    return res.status(200).send({ payload: tickets, pagination });
   } catch (error) {
-    console.log("Error al obtener todos los tickets");
+    console.error(error);
     return res.status(500).send({ error: "Error interno al obtener tickets" });
   }
 };
@@ -147,6 +204,71 @@ const deleteTicket = async (req, res) => {
   }
 };
 
+//Estado y prioridad (Soporte y Admin)
+const patchState = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { state_id } = req.body;
+    if (!isValidId(state_id)) {
+      return res.status(400).send({ error: "Falta un state_id valido" });
+    }
+    const ticket = await ticketService.changeState(id, state_id);
+    if (!ticket) {
+      return res.status(404).send({ error: "No se encontro el ticket!" });
+    }
+    return res.status(200).send({ payload: ticket });
+  } catch (error) {
+    if (error.code === PG_ERRORS.FOREIGN_KEY_VIOLATION) {
+      return res.status(400).send({ error: "El estado no existe" });
+    }
+    console.error(error);
+    return res.status(500).send({ error: "Error interno al cambiar el estado" });
+  }
+};
+
+const patchPriority = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { priority_id } = req.body;
+    if (!isValidId(priority_id)) {
+      return res.status(400).send({ error: "Falta un priority_id valido" });
+    }
+    const ticket = await ticketService.changePriority(id, priority_id);
+    if (!ticket) {
+      return res.status(404).send({ error: "No se encontro el ticket!" });
+    }
+    return res.status(200).send({ payload: ticket });
+  } catch (error) {
+    if (error.code === PG_ERRORS.FOREIGN_KEY_VIOLATION) {
+      return res.status(400).send({ error: "La prioridad no existe" });
+    }
+    console.error(error);
+    return res
+      .status(500)
+      .send({ error: "Error interno al cambiar la prioridad" });
+  }
+};
+
+//Cerrar ticket: cualquier rol, el Usuario solo los tickets donde participa
+const closeTicket = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const ticket = await ticketService.closeTicket(id, req.user);
+    if (ticket === null) {
+      return res.status(404).send({ error: "No se encontro el ticket!" });
+    }
+    if (ticket === false) {
+      return res
+        .status(409)
+        .send({ error: "El ticket ya esta cerrado o cancelado" });
+    }
+    return res.status(200).send({ payload: ticket });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).send({ error: "Error interno al cerrar el ticket" });
+  }
+};
+
 //Assignees and Requester
 //Como predeterminado se asigna requester al creador
 const addRequester = async (req, res) => {
@@ -273,6 +395,9 @@ export {
   createTickets,
   putTicket,
   deleteTicket,
+  patchState,
+  patchPriority,
+  closeTicket,
   addRequester,
   addAssignees,
   removeRequester,

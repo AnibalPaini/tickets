@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { fileURLToPath } from "node:url";
 
 export const config={
     port: process.env.PORT || 8080,
@@ -12,5 +13,7 @@ export const config={
     cookie_secret:process.env.COOKIE_SECRET,
     cookie_name:process.env.COOKIOE_NAME,
     node_env:process.env.ENV || "dev",
-    frontend_url:process.env.FRONTEND_URL || "http://localhost:5173"
+    frontend_url:process.env.FRONTEND_URL || "http://localhost:5173",
+    //Carpeta de los adjuntos: por defecto backend/uploads
+    uploads_dir:process.env.UPLOADS_DIR || fileURLToPath(new URL("../../uploads/", import.meta.url))
 }

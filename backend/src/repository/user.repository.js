@@ -28,6 +28,20 @@ export default class UserRepo {
     }
   };
 
+  //Varios usuarios de una vez (ANY: el id esta dentro del array)
+  findByIds = async (ids) => {
+    try {
+      const query = `
+      SELECT id, nombre AS name, email, activo, rol_id, office_id FROM users WHERE id = ANY($1::int[]);
+    `;
+      const { rows } = await pool.query(query, [ids]);
+      return rows;
+    } catch (error) {
+      console.log("Error repo user findByIds");
+      throw error;
+    }
+  };
+
   findByEmail = async (email) => {
     try {
       const query = `
