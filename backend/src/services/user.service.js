@@ -1,4 +1,3 @@
-import pool from "../db/connectionDB.js";
 import UserRepo from "../repository/user.repository.js";
 import { hashPassword, comparePassword } from "../utils/bcrypt.js";
 
@@ -29,30 +28,25 @@ export default class UserService {
     return usuario;
   };
 
-  create = async (email, name, password, rol_id, activo) => {
-    try {
-      const passHash = await hashPassword(password);
-      const query = `
-                INSERT INTO users(
-                    email,
-                    name,
-                    password,
-                    rol_id,
-                    activo
-                )
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING id, email, name, rol_id, activo
-            `;
-      const values = [email, name, passHash, rol_id, activo];
-      const { rows } = await pool.query(query, values);
-      return rows[0];
-    } catch (error) {
-      throw error;
-    }
+  create = async (email, name, password, rol_id, activo, office_id) => {
+    const passHash = await hashPassword(password);
+    return await userRepo.create({
+      email,
+      name,
+      password: passHash,
+      rol_id,
+      activo,
+      office_id,
+    });
   };
 
-  refresh = (id) => {
-    return userRepo.findById(id);
+  //Un usuario desactivado no puede renovar el token
+  refresh = async (id) => {
+    const user = await userRepo.findById(id);
+    if (!user || !user.activo) {
+      return null;
+    }
+    return user;
   };
 
   getUsers = () => {
@@ -70,7 +64,8 @@ export default class UserService {
       return null;
     }
 
-    let password = user.password;
+    //null = no se cambia la contraseña
+    let password = null;
 
     if (datos.password && datos.password !== "") {
       password = await hashPassword(datos.password);
@@ -89,6 +84,6 @@ export default class UserService {
       return null;
     }
 
-    return userRepo.delete(id);
+    return userRepo.deactivate(id);
   };
 }

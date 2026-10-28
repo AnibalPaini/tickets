@@ -1,9 +1,11 @@
 import TicketService from "../services/tickets.service.js";
+import { PG_ERRORS } from "../utils/pgErrors.js";
+import { isValidId } from "../utils/validators.js";
 const ticketService = new TicketService();
 
 const getTickets = async (req, res) => {
   try {
-    const tickets = await ticketService.getTickets();
+    const tickets = await ticketService.getTickets(req.user);
     return res.status(200).send({ payload: tickets });
   } catch (error) {
     console.log("Error al obtener todos los tickets");
@@ -14,7 +16,7 @@ const getTickets = async (req, res) => {
 const getTicketById = async (req, res) => {
   try {
     const id = req.params.id;
-    const ticket = await ticketService.getTicketById(id);
+    const ticket = await ticketService.getTicketById(id, req.user);
     if (!ticket) {
       return res.status(404).send({ error: "No se encontro ticket." });
     }
@@ -28,7 +30,7 @@ const getTicketById = async (req, res) => {
 const getTicketDetailsById = async (req, res) => {
   try {
     const id = req.params.id;
-    const ticket = await ticketService.getTicketDetailsById(id);
+    const ticket = await ticketService.getTicketDetailsById(id, req.user);
     if (!ticket) {
       return res.status(404).send({ error: "No se encontro ticket." });
     }
@@ -50,6 +52,9 @@ const createTickets = async (req, res) => {
         error: "Faltan datos obligatorios",
       });
     }
+    if (!isValidId(category_id)) {
+      return res.status(400).send({ error: "La categoria no es valida" });
+    }
 
     const ticket = {
       title,
@@ -70,6 +75,9 @@ const createTickets = async (req, res) => {
 
     return res.status(201).send({ payload: ticketCreated });
   } catch (error) {
+    if (error.code === PG_ERRORS.FOREIGN_KEY_VIOLATION) {
+      return res.status(400).send({ error: "La categoria no existe" });
+    }
     console.error(error);
     return res.status(500).send({
       error: "Error al crear el ticket",
@@ -86,6 +94,15 @@ const putTicket = async (req, res) => {
         .status(400)
         .send({ error: "No se pasaron los campos obligatorios" });
     }
+    if (
+      !isValidId(category_id) ||
+      !isValidId(priority_id) ||
+      !isValidId(state_id)
+    ) {
+      return res
+        .status(400)
+        .send({ error: "La categoria, prioridad o estado no es valido" });
+    }
     let datos = { title, description, category_id, priority_id, state_id };
     if (!id) {
       return res.status(400).send({ error: "No se obtuvo el ID" });
@@ -98,6 +115,11 @@ const putTicket = async (req, res) => {
     }
     return res.status(200).send({ payload: ticketUpdated });
   } catch (error) {
+    if (error.code === PG_ERRORS.FOREIGN_KEY_VIOLATION) {
+      return res
+        .status(400)
+        .send({ error: "La categoria, prioridad o estado no existe" });
+    }
     console.log("Error al actualizar un ticket.");
     return res
       .status(500)
@@ -134,12 +156,21 @@ const addRequester = async (req, res) => {
     if (!id || !idUser) {
       return res.status(400).send({ error: "Faltan datos!" });
     }
+    if (!isValidId(idUser)) {
+      return res.status(400).send({ error: "El usuario no es valido" });
+    }
     const requester = await ticketService.addRequester(id, idUser);
     if (!requester) {
       return res.status(404).send({ error: "No se encontro el ticket!" });
     }
     return res.status(200).send({ payload: requester });
   } catch (error) {
+    if (error.code === PG_ERRORS.UNIQUE_VIOLATION) {
+      return res.status(409).send({ error: "El usuario ya es solicitante" });
+    }
+    if (error.code === PG_ERRORS.FOREIGN_KEY_VIOLATION) {
+      return res.status(400).send({ error: "El usuario no existe" });
+    }
     console.error(error);
     return res
       .status(500)
@@ -159,16 +190,79 @@ const addAssignees = async (req, res) => {
     if (!id || (userIds.length === 0 && areaIds.length === 0)) {
       return res.status(400).send({ error: "Faltan datos!" });
     }
+    if (!userIds.every(isValidId) || !areaIds.every(isValidId)) {
+      return res.status(400).send({ error: "Hay IDs que no son validos" });
+    }
     const result = await ticketService.addAssignees(id, userIds, areaIds);
     if (!result) {
       return res.status(404).send({ error: "No se encontro el ticket!" });
     }
     return res.status(200).send({ payload: result });
   } catch (error) {
+    if (error.code === PG_ERRORS.FOREIGN_KEY_VIOLATION) {
+      return res
+        .status(400)
+        .send({ error: "Algun usuario o area no existe, no se asigno nada" });
+    }
     console.error(error);
     return res
       .status(500)
       .send({ error: "Error del server al asignar el ticket" });
+  }
+};
+
+//Desasignar
+const removeRequester = async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+    const removed = await ticketService.removeRequester(id, userId);
+    if (!removed) {
+      return res
+        .status(404)
+        .send({ error: "El usuario no es solicitante de ese ticket" });
+    }
+    return res.status(200).send({ payload: removed });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .send({ error: "Error del server al quitar el solicitante" });
+  }
+};
+
+const removeAssignee = async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+    const removed = await ticketService.removeAssignee(id, userId);
+    if (!removed) {
+      return res
+        .status(404)
+        .send({ error: "El usuario no esta asignado a ese ticket" });
+    }
+    return res.status(200).send({ payload: removed });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .send({ error: "Error del server al desasignar el usuario" });
+  }
+};
+
+const removeArea = async (req, res) => {
+  try {
+    const { id, areaId } = req.params;
+    const removed = await ticketService.removeArea(id, areaId);
+    if (!removed) {
+      return res
+        .status(404)
+        .send({ error: "El area no esta asignada a ese ticket" });
+    }
+    return res.status(200).send({ payload: removed });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .send({ error: "Error del server al desasignar el area" });
   }
 };
 
@@ -181,4 +275,7 @@ export {
   deleteTicket,
   addRequester,
   addAssignees,
+  removeRequester,
+  removeAssignee,
+  removeArea,
 };

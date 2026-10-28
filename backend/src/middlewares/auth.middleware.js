@@ -31,7 +31,6 @@ export const authorizationMiddleware = (...roles) => {
       }
       const payload = jwtVerifyAccess(accessToken);
       const userRol = payload.rol_id;
-      console.log(userRol);
       if (roles.includes(userRol)) {
         return next();
       } else {

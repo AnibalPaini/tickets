@@ -5,6 +5,9 @@ import {
   jwtVerifyRefresh,
 } from "../utils/jwt.js";
 import { config } from "../config/config.js";
+import { PG_ERRORS } from "../utils/pgErrors.js";
+import { ROLES } from "../utils/roles.js";
+import { isValidId } from "../utils/validators.js";
 const userService = new UserService();
 
 const loginUser = async (req, res) => {
@@ -56,6 +59,7 @@ const loginUser = async (req, res) => {
         email: user.email,
         name: user.name,
         rol_id: user.rol_id,
+        office_id: user.office_id,
       },
     });
   } catch (error) {
@@ -104,11 +108,33 @@ const refresh = async (req, res) => {
   }
 };
 
+//Borra las cookies de sesion (tienen que ir las mismas opciones que al crearlas)
+const logout = async (req, res) => {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: config.node_env === "production",
+    sameSite: "strict",
+  };
+  res.clearCookie("accessToken", cookieOptions);
+  res.clearCookie("refreshToken", cookieOptions);
+  return res.status(200).json({ message: "Sesion cerrada" });
+};
+
 const createUser = async (req, res) => {
   try {
-    let { email, name, password, rol_id = 1, activo = true } = req.body;
+    let {
+      email,
+      name,
+      password,
+      rol_id = 1,
+      activo = true,
+      office_id = null,
+    } = req.body;
     if (!email || !name || !password) {
       return res.status(400).send({ error: "Completar datos obligatorios!" });
+    }
+    if (!isValidId(rol_id) || (office_id !== null && !isValidId(office_id))) {
+      return res.status(400).send({ error: "El rol o la oficina no es valido" });
     }
     const user = await userService.create(
       email,
@@ -116,6 +142,7 @@ const createUser = async (req, res) => {
       password,
       rol_id,
       activo,
+      office_id,
     );
     if (!user) {
       return res
@@ -126,6 +153,12 @@ const createUser = async (req, res) => {
 
     return res.status(201).send({ payload: user });
   } catch (error) {
+    if (error.code === PG_ERRORS.UNIQUE_VIOLATION) {
+      return res.status(409).send({ error: "Ya existe un usuario con ese email" });
+    }
+    if (error.code === PG_ERRORS.FOREIGN_KEY_VIOLATION) {
+      return res.status(400).send({ error: "El rol o la oficina no existe" });
+    }
     console.log("Error al crear usuario: ", error);
     return res.status(500).send({
       error: "Error interno del servidor!",
@@ -138,6 +171,10 @@ const getUserByid = async (req, res) => {
     const id = req.params.id;
     if (!id) {
       return res.status(400).send({ error: "Falta el ID." });
+    }
+    //Un Usuario comun solo puede ver sus propios datos
+    if (req.user.rol_id === ROLES.USUARIO && req.user.id !== Number(id)) {
+      return res.status(403).send({ error: "No autorizado" });
     }
     const user = await userService.getUserByid(id);
     if (!user) {
@@ -165,10 +202,15 @@ const getUsers = async (req, res) => {
 const putUser = async (req, res) => {
   try {
     const id = req.params.id;
-    const datos = req.body;
-    if (!id || datos.length === 0) {
+    const { email, name, password, rol_id, activo, office_id = null } =
+      req.body;
+    if (!id || !email || !name || !rol_id || typeof activo !== "boolean") {
       return res.status(400).send({ error: "Faltan datos" });
     }
+    if (!isValidId(rol_id) || (office_id !== null && !isValidId(office_id))) {
+      return res.status(400).send({ error: "El rol o la oficina no es valido" });
+    }
+    const datos = { email, name, password, rol_id, activo, office_id };
     const userUpdated = await userService.updateUser(id, datos);
     if (!userUpdated) {
       return res
@@ -177,10 +219,19 @@ const putUser = async (req, res) => {
     }
     return res.status(200).send({ payload: userUpdated });
   } catch (error) {
+    if (error.code === PG_ERRORS.UNIQUE_VIOLATION) {
+      return res.status(409).send({ error: "Ya existe un usuario con ese email" });
+    }
+    if (error.code === PG_ERRORS.FOREIGN_KEY_VIOLATION) {
+      return res.status(400).send({ error: "El rol o la oficina no existe" });
+    }
     console.log("Error en putUser");
     return res.status(500).send({ error: "Error al actualizar usuario" });
   }
 };
+
+//No borra el usuario, lo desactiva (tiene tickets y respuestas asociadas)
+//Se puede reactivar con un PUT con activo: true
 const deleteUser = async (req, res) => {
   try {
     const id = req.params.id;
@@ -191,17 +242,18 @@ const deleteUser = async (req, res) => {
     if (!userDeleted) {
       return res
         .status(404)
-        .send({ error: "No se encontro el usuario al eliminar" });
+        .send({ error: "No se encontro el usuario a desactivar" });
     }
     return res.status(200).send({ payload: userDeleted });
   } catch (error) {
     console.log("Error en deleteUser");
-    return res.status(500).send({ error: "Error al eliminar usuario" });
+    return res.status(500).send({ error: "Error al desactivar usuario" });
   }
 };
 
 export default {
   loginUser,
+  logout,
   getUserByid,
   getUsers,
   createUser,

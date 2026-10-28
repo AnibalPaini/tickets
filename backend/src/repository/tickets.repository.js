@@ -8,6 +8,29 @@ export default class TicketRepo {
     return result.rows;
   };
 
+  //Tickets donde el usuario es solicitante, asignado o de un area asignada
+  findByParticipant = async (userId) => {
+    const query = `
+    SELECT * FROM tickets t
+    WHERE EXISTS (
+            SELECT 1 FROM ticket_requesters tr
+            WHERE tr.ticket_id = t.id AND tr.user_id = $1
+        )
+        OR EXISTS (
+            SELECT 1 FROM ticket_assignees ta
+            WHERE ta.ticket_id = t.id AND ta.user_id = $1
+        )
+        OR EXISTS (
+            SELECT 1 FROM ticket_areas tar
+            INNER JOIN user_area ua
+                ON ua.area_id = tar.area_id
+            WHERE tar.ticket_id = t.id AND ua.user_id = $1
+        )
+    `;
+    const result = await pool.query(query, [userId]);
+    return result.rows;
+  };
+
   findById = async (id) => {
     const query = `
         SELECT id,
@@ -216,34 +239,106 @@ export default class TicketRepo {
     return result.rows[0] || null;
   };
 
+  //Todo en una transaccion: si falla un insert (ej: un usuario que no existe)
+  //se deshacen todos y no queda el ticket asignado a medias
   //ON CONFLICT DO NOTHING: si ya estaba asignado no tira error, no inserta nada
-  addAssignee = async (ticketId, userId) => {
-    const query = `
+  addAssignees = async (ticketId, userIds, areaIds) => {
+    const queryUser = `
     INSERT INTO ticket_assignees (ticket_id, user_id)
     VALUES ($1, $2)
     ON CONFLICT DO NOTHING
     RETURNING *
-  `;
-
-    const values = [ticketId, userId];
-
-    const result = await pool.query(query, values);
-
-    return result.rows[0] || null;
-  };
-
-  addArea = async (ticketId, areaId) => {
-    const query = `
+    `;
+    const queryArea = `
     INSERT INTO ticket_areas (ticket_id, area_id)
     VALUES ($1, $2)
     ON CONFLICT DO NOTHING
     RETURNING *
-  `;
+    `;
 
-    const values = [ticketId, areaId];
+    //Para una transaccion hace falta usar siempre la misma conexion (client)
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const result = await pool.query(query, values);
+      const users = [];
+      for (const userId of userIds) {
+        const result = await client.query(queryUser, [ticketId, userId]);
+        if (result.rows[0]) {
+          users.push(result.rows[0]);
+        }
+      }
 
+      const areas = [];
+      for (const areaId of areaIds) {
+        const result = await client.query(queryArea, [ticketId, areaId]);
+        if (result.rows[0]) {
+          areas.push(result.rows[0]);
+        }
+      }
+
+      await client.query("COMMIT");
+      return { users, areas };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  };
+
+  //Desasignar: devuelven null si no estaba asignado
+  removeRequester = async (ticketId, userId) => {
+    const query = `
+    DELETE FROM ticket_requesters
+    WHERE ticket_id = $1 AND user_id = $2
+    RETURNING *
+    `;
+    const result = await pool.query(query, [ticketId, userId]);
     return result.rows[0] || null;
+  };
+
+  removeAssignee = async (ticketId, userId) => {
+    const query = `
+    DELETE FROM ticket_assignees
+    WHERE ticket_id = $1 AND user_id = $2
+    RETURNING *
+    `;
+    const result = await pool.query(query, [ticketId, userId]);
+    return result.rows[0] || null;
+  };
+
+  removeArea = async (ticketId, areaId) => {
+    const query = `
+    DELETE FROM ticket_areas
+    WHERE ticket_id = $1 AND area_id = $2
+    RETURNING *
+    `;
+    const result = await pool.query(query, [ticketId, areaId]);
+    return result.rows[0] || null;
+  };
+
+  //true si el usuario es solicitante, asignado o pertenece a un area asignada al ticket
+  isParticipant = async (ticketId, userId) => {
+    const query = `
+    SELECT EXISTS (
+        SELECT 1 FROM ticket_requesters
+        WHERE ticket_id = $1 AND user_id = $2
+
+        UNION ALL
+
+        SELECT 1 FROM ticket_assignees
+        WHERE ticket_id = $1 AND user_id = $2
+
+        UNION ALL
+
+        SELECT 1 FROM ticket_areas ta
+        INNER JOIN user_area ua
+            ON ua.area_id = ta.area_id
+        WHERE ta.ticket_id = $1 AND ua.user_id = $2
+    ) AS is_participant
+    `;
+    const result = await pool.query(query, [ticketId, userId]);
+    return result.rows[0].is_participant;
   };
 }

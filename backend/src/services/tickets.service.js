@@ -1,16 +1,37 @@
 import TicketRepo from "../repository/tickets.repository.js";
+import { ROLES } from "../utils/roles.js";
 const ticketRepo = new TicketRepo();
 export default class TicketService {
-  getTickets = async () => {
+  //El Usuario solo ve los tickets donde participa, Soporte y Admin ven todos
+  canView = async (ticketId, user) => {
+    if (user.rol_id !== ROLES.USUARIO) {
+      return true;
+    }
+    return await ticketRepo.isParticipant(ticketId, user.id);
+  };
+
+  getTickets = async (user) => {
+    if (user.rol_id === ROLES.USUARIO) {
+      return ticketRepo.findByParticipant(user.id);
+    }
     return ticketRepo.findAll();
   };
 
-  getTicketById = async (id) => {
-    return ticketRepo.findById(id)
+  //Si el usuario no puede verlo se devuelve null (404), asi no sabe que existe
+  getTicketById = async (id, user) => {
+    const ticket = await ticketRepo.findById(id);
+    if (!ticket || !(await this.canView(id, user))) {
+      return null;
+    }
+    return ticket;
   };
 
-  getTicketDetailsById = async (id) => {
-    return ticketRepo.getDetailsById(id)
+  getTicketDetailsById = async (id, user) => {
+    const ticket = await ticketRepo.getDetailsById(id);
+    if (!ticket || !(await this.canView(id, user))) {
+      return null;
+    }
+    return ticket;
   };
 
   createTicket = async (datos) => {
@@ -48,24 +69,18 @@ export default class TicketService {
     if (!ticket) {
       return null;
     }
+    return await ticketRepo.addAssignees(ticketId, userIds, areaIds);
+  };
 
-    //Si ya estaba asignado el insert devuelve null y no se agrega
-    const users = [];
-    for (const userId of userIds) {
-      const assignee = await ticketRepo.addAssignee(ticketId, userId);
-      if (assignee) {
-        users.push(assignee);
-      }
-    }
+  removeRequester = async (ticketId, userId) => {
+    return await ticketRepo.removeRequester(ticketId, userId);
+  };
 
-    const areas = [];
-    for (const areaId of areaIds) {
-      const area = await ticketRepo.addArea(ticketId, areaId);
-      if (area) {
-        areas.push(area);
-      }
-    }
+  removeAssignee = async (ticketId, userId) => {
+    return await ticketRepo.removeAssignee(ticketId, userId);
+  };
 
-    return { users, areas };
+  removeArea = async (ticketId, areaId) => {
+    return await ticketRepo.removeArea(ticketId, areaId);
   };
 }

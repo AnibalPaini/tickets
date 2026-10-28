@@ -11,5 +11,6 @@ export const config={
     jwt_refresh_secret:process.env.JWT_REFRESH_SECRET,
     cookie_secret:process.env.COOKIE_SECRET,
     cookie_name:process.env.COOKIOE_NAME,
-    node_env:process.env.ENV || "dev"
+    node_env:process.env.ENV || "dev",
+    frontend_url:process.env.FRONTEND_URL || "http://localhost:5173"
 }
